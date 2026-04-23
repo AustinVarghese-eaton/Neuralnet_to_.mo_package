@@ -1,0 +1,15 @@
+﻿# Bytecode / caches
+__pycache__/
+*.pyc
+
+# Virtual env
+.venv/
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# Runs/artifacts (keep only .gitkeep)
+runs/*
+!runs/.gitkeep

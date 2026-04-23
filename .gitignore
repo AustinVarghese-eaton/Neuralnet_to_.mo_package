@@ -1,0 +1,77 @@
+# ============================================================================
+# SURROGATE GENERATOR - GITIGNORE
+# Keep only necessary files for cloning and running the Excel UI workflow
+# ============================================================================
+
+# === EXCLUDED FILES (as per user request) ===
+# Helper scripts for documentation
+create_word_doc.py
+create_word_doc_v2.py
+
+# Documentation artifacts
+SurrogateGenerator_SourceCode.docx
+
+# === EXECUTION & LOGS ===
+# All run outputs and execution logs (except .gitkeep placeholder)
+runs/*
+!runs/.gitkeep
+
+Engine/engine_last_run.log
+*.log
+
+# === GENERATED/TEMPORARY FILES ===
+# Excel temporary files
+~$*.xlsm
+
+# Generated preview files
+headers_preview.json
+ExcelUI/headers_preview.json
+
+# === PYTHON & BUILD ARTIFACTS ===
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Packages
+*.egg-info/
+build/
+dist/
+*.egg
+surrogate_tool_src.zip
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# pytest
+.pytest_cache/
+.coverage
+
+# === IDE & EDITOR ===
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+*~
+.env
+
+# === OS SPECIFIC ===
+Thumbs.db
+.DS_Store
+
+# ============================================================================
+# KEEP THESE (tracked by git)
+# ============================================================================
+# Engine/src/               -> Python source code
+# Engine/pyproject.toml    -> Package configuration
+# Engine/requirements.txt  -> Dependencies
+# Engine/tests/            -> Tests
+# ExcelUI/SurrogateGeneratorUI.xlsm  -> Main Excel UI
+# Docs/                    -> Documentation
+# samples/                 -> Sample data
+# README, LICENSE, etc.    -> Project metadata
