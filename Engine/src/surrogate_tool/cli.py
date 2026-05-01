@@ -18,6 +18,7 @@ from .pipeline.eda import run_eda
 from .pipeline.split_scale import run_split_scale
 from .pipeline.train import run_training
 from .pipeline.modelica_export import export_modelica
+from .pipeline.fmu_export import create_fmu
 from .pipeline.report import generate_report
 from .pipeline.orchestrator import run_full_attempt
 
@@ -66,6 +67,7 @@ def _cmd_make_run(args, logger) -> int:
         input_columns=[],
         output_columns=[],
         engine_version=__version__,
+        gcc_path=args.gcc_path if hasattr(args, "gcc_path") else None,
     ).normalized()
 
     cfg_path = input_dir / "run_config.json"
@@ -123,6 +125,12 @@ def _cmd_train(args, logger) -> int:
 
 def _cmd_export_modelica(args, logger) -> int:
     result = export_modelica(run_id=args.run_id, attempt_num=int(args.attempt))
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def _cmd_create_fmu(args, logger) -> int:
+    result = create_fmu(run_id=args.run_id, attempt_num=int(args.attempt))
     print(json.dumps(result, indent=2))
     return 0
 
@@ -195,6 +203,8 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--sheet", default=None)
     p_run.add_argument("--package", required=True)
     p_run.add_argument("--run-id", default=None)
+    p_run.add_argument("--gcc-path", default=None,
+                       help=r"Path to gcc.exe for FMU DLL compilation. Auto-detected from OpenModelica if omitted.")
     p_run.set_defaults(func=_cmd_make_run)
 
     p_val = sub.add_parser("validate-config")
@@ -232,6 +242,11 @@ def main(argv: list[str] | None = None) -> int:
     p_ex.add_argument("--run-id", required=True)
     p_ex.add_argument("--attempt", default="1")
     p_ex.set_defaults(func=_cmd_export_modelica)
+
+    p_fmu = sub.add_parser("create-fmu")
+    p_fmu.add_argument("--run-id", required=True)
+    p_fmu.add_argument("--attempt", default="1")
+    p_fmu.set_defaults(func=_cmd_create_fmu)
 
     p_rp = sub.add_parser("report")
     p_rp.add_argument("--run-id", required=True)

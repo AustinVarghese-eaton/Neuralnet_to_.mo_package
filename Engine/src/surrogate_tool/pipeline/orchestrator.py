@@ -5,6 +5,7 @@ from surrogate_tool.pipeline.eda import run_eda
 from surrogate_tool.pipeline.split_scale import run_split_scale
 from surrogate_tool.pipeline.train import run_training
 from surrogate_tool.pipeline.modelica_export import export_modelica
+from surrogate_tool.pipeline.fmu_export import create_fmu
 from surrogate_tool.pipeline.report import generate_report
 
 
@@ -24,6 +25,8 @@ def run_full_attempt(run_id: str, attempt_num: int) -> dict:
 
     export_modelica(run_id=run_id, attempt_num=attempt_num)
 
+    fmu_result = create_fmu(run_id=run_id, attempt_num=attempt_num)
+
     rep = generate_report(run_id=run_id, attempt_num=attempt_num)
 
-    return {"report": rep}
+    return {"report": rep, "fmu": fmu_result}

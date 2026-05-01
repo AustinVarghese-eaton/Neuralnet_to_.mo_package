@@ -53,6 +53,16 @@ class RunConfig(BaseModel):
     random_seed: int = 42
     engine_version: str = "0.1.0"
 
+    # FMU compilation
+    gcc_path: Optional[str] = Field(
+        default=None,
+        description=(
+            "Path to gcc executable for FMU DLL compilation. "
+            r"Auto-detected from OpenModelica install (e.g. C:\OpenModelica1.24.0\tools\msys\mingw64\bin\gcc.exe). "
+            "Leave None to use auto-detection."
+        ),
+    )
+
     @field_validator("package_name")
     @classmethod
     def _pkg_name(cls, v: str) -> str:
