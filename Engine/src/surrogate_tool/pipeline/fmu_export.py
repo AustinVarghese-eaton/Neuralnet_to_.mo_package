@@ -10,6 +10,8 @@ import uuid
 import zipfile
 from pathlib import Path
 
+import numpy as np
+
 from surrogate_tool.contracts.run_config import load_run_config
 from surrogate_tool.contracts.status import write_status
 from surrogate_tool.paths import runs_root
@@ -190,9 +192,11 @@ def _gen_model_c(
     # Build C static data for each layer
     layer_data_lines: list[str] = []
     for li, layer in enumerate(layers):
-        W = layer["W"]   # list[list[float]]  shape [n_out_layer][n_in_layer]
+        # Keras stores W as [n_in, n_out]; C matmul expects row i = output neuron i
+        # so we must transpose to [n_out, n_in] before flattening row-major.
+        W_T = np.array(layer["W"]).T.tolist()  # [n_out, n_in]
         b = layer["b"]   # list[float]
-        layer_data_lines.append(_c_array_2d_flat(W, f"L{li}_W"))
+        layer_data_lines.append(_c_array_2d_flat(W_T, f"L{li}_W"))
         layer_data_lines.append(_c_array_1d(b, f"L{li}_b"))
 
     # x_scaler: mean + scale arrays

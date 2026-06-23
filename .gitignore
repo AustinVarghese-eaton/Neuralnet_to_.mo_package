@@ -75,3 +75,10 @@ Thumbs.db
 # Docs/                    -> Documentation
 # samples/                 -> Sample data
 # README, LICENSE, etc.    -> Project metadata
+
+runs/
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/

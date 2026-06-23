@@ -33,7 +33,6 @@ Engine/src/surrogate_tool/   ← Python backend (installable package)
 
 ExcelUI/
   SurrogateGeneratorUI.xlsm  ← VBA-driven front-end
-  build_ui_v2.py             ← Rebuilds .xlsm from scratch (idempotent)
 
 runs/                        ← Runtime output; never commit contents
 samples/                     ← Example datasets
@@ -127,7 +126,8 @@ States: `READY`, `RUNNING`, `DONE`, `ERROR`
 ### mlp_weights.json
 Serialized trained network: `input_cols`, `target_cols`, `layers[]` (W, b, activation), `x_scaler`, `y_scaler`. This is what gets compiled into Modelica and FMU.
 - Scaler keys are `mean` and `scale` (not `mean_` / `scale_`) — do not confuse with sklearn attribute names.
-- Layer weight matrix `W` is shape `[n_out_layer][n_in_layer]` (already transposed for direct matmul).
+- Layer weight matrix `W` is stored as Keras convention: shape `[n_in, n_out]` (NOT pre-transposed).
+- **Consumers must transpose before use:** `modelica_export.py` does `W = W_tf.T` → `[n_out, n_in]`; `fmu_export.py` does `W_T = np.array(layer["W"]).T.tolist()` before flattening into C. Both are correct post-fix (May 2026).
 
 ### FMU 2.0 Model Exchange (`fmu_export.py`)
 - Output: `attempts/attempt_001/fmu/<PackageName>.fmu` — a zip containing `modelDescription.xml`, `sources/model.c`, and optionally `binaries/win64/<PackageName>.dll`.
@@ -154,18 +154,23 @@ Serialized trained network: `input_cols`, `target_cols`, `layers[]` (W, b, activ
 
 VBA calls Python via `WScript.Shell` using `.venv\Scripts\python.exe`.
 
-**9-button workflow:**
+**10-button workflow:**
 
 | # | Button | VBA Action | CLI Command |
 |---|--------|-----------|-------------|
-| 1 | Pick Dataset | `Action_PickDataset` | — |
-| 2 | Load Headers | `Action_LoadHeaders` | `preview-headers` |
-| 3 | Build Mapping | `Action_BuildMapping` | — |
-| 4 | Process (green) | `Action_Process` | `make-run` + `retrain` |
-| 5 | Retrain | `Action_Retrain` | `retrain` |
-| 6 | Save Best .mo | `Action_SaveBestMo` | — |
-| 7 | Open Report | `Action_OpenReport` | — |
-| 8 | Open Run Folder | `Action_OpenRunFolder` | — |
+| 1 | Pick Dataset | `UI_PickDataset` | — |
+| 2 | Load Headers | `UI_LoadHeaders` | `preview-headers` |
+| 3 | Build Mapping | `UI_BuildMapping` | — |
+| 4 | Process (blue) | `UI_Process` | `make-run` + pipeline stages |
+| 5 | Retrain | `UI_Retrain` | `retrain` |
+| 6 | Create FMU (green) | `UI_CreateFMU` | `create-fmu --run-id <id> --attempt <n>` |
+| 7 | Save Best .mo + Report | `UI_SaveBestModelica` | — |
+| 8 | Open Report | `UI_OpenReport` | — |
+| 9 | Open Run Folder | `UI_OpenRunFolder` | — |
+| 10 | Reset (red) | `UI_Reset` | — |
+
+- **`UI_CreateFMU`** reads `runs/<run_id>/latest.json` to get `best_attempt`, strips the `"attempt_"` prefix to derive the attempt number, then calls `create-fmu`. Updates status cells during execution and shows the `.fmu` path on success.
+- Rebuild button layout after any VBA change by running `UX_RebuildDashboardV2` (`Alt+F8` → select → Run).
 
 **Named ranges (col J of "SurrogateGenerator" sheet):**
 - `UI_HeadersCache` — pipe-delimited column names from dataset
@@ -176,8 +181,6 @@ VBA calls Python via `WScript.Shell` using `.venv\Scripts\python.exe`.
 - Created dynamically by `Action_BuildMapping`; named `"mapping"`
 - Headers cached in hidden col E (DV source) to avoid the 255-char Excel formula limit
 - Row counts stored in hidden col G so `Action_ConfirmMapping` knows how many rows to read
-
-To rebuild the `.xlsm` from scratch: `python ExcelUI/build_ui_v2.py` (idempotent).
 
 ---
 
@@ -191,5 +194,110 @@ To rebuild the `.xlsm` from scratch: `python ExcelUI/build_ui_v2.py` (idempotent
 - **FMU XML pitfalls** — continuous inputs: no `initial="exact"`, require `<Real start="0.0"/>`. `<ModelExchange>` must not have `needsDirectionDerivatives`. Violating these causes OMEdit FMI2XML errors even though simulation may still run.
 - **gcc subprocess needs its own bin on PATH** — always prepend `Path(gcc_exe).parent` to `env["PATH"]` when calling `subprocess.run`; otherwise `cc1`/`as` not found and compile silently fails with rc=1.
 - **mlp_weights.json scaler keys** — are `mean`/`scale`, not `mean_`/`scale_`.
+- **mlp_weights.json W shape** — stored as Keras `[n_in, n_out]`. Both `modelica_export.py` and `fmu_export.py` transpose to `[n_out, n_in]` before use. Do NOT remove the transpose — it will silently produce wrong predictions.
 - **`package_name` regex** — forgetting to validate before writing `RunConfig` causes a Pydantic error at construction time, not at export time.
 - **XLSX sheet name** — must be passed explicitly if not `Sheet1`; defaults to `None` in `RunConfig` (loader picks first sheet).
+
+---
+
+## Environment Setup & Runs Folder Troubleshooting
+
+### Symptom: `make-run` fails or run folders are created in the wrong repo
+
+This happens when `C:\SG_ENV` (or any venv the UI calls) has the surrogate_tool package installed from a **different repo** (e.g. `Automation_pipeline\SurrogateGenerator\`). The `paths.py` `project_root()` then resolves to that repo and all `runs/` output goes there instead of here.
+
+**Diagnosis — run in VS Code terminal (PowerShell):**
+```powershell
+& "C:\SG_ENV\Scripts\python.exe" -c "from surrogate_tool.paths import runs_root; print(runs_root())"
+```
+Expected output: `C:\Users\E0849595\Desktop\IMP\.mo_FMU\runs`
+
+If it prints a different path, the venv is pointing to the wrong repo.
+
+**Fix — re-point the venv to this repo (one-time):**
+```powershell
+& "C:\SG_ENV\Scripts\pip.exe" install -e "C:\Users\E0849595\Desktop\IMP\.mo_FMU\Engine"
+```
+
+**Verify:**
+```powershell
+& "C:\SG_ENV\Scripts\python.exe" -c "from surrogate_tool.paths import project_root; print(project_root())"
+# Should print: C:\Users\E0849595\Desktop\IMP\.mo_FMU
+```
+
+After this, hitting **Process** in the UI creates run folders under `runs/` in this repo.
+
+### Symptom: `.mo` package created but no FMU
+
+The old repo's `orchestrator.py` did not include the `create_fmu` stage. After re-pointing the venv (above), new runs will produce both `.mo` and `.fmu` automatically.
+
+To generate the FMU for an existing run (standalone):
+```powershell
+& "C:\SG_ENV\Scripts\python.exe" -m surrogate_tool create-fmu --run-id <run_id> --attempt 1
+```
+
+### How `project_root()` is resolved (`paths.py`)
+
+`paths.py` walks up from `__file__` looking for a `.surrogate_root` marker file (placed at the repo root). This uniquely identifies **this** repo even if multiple repos with the same structure exist on the machine. The `.surrogate_root` file is empty — do not delete it.
+
+---
+
+## Improvements
+
+Efficiency improvements identified (May 2026) in priority order:
+
+### 1. Add Tests (Highest Priority — Enables Everything Else Safely)
+
+**Status:** Implementation complete (May 2026).  
+Test files live in `Engine/tests/`. Run with: `cd Engine && python -m pytest tests/ -v` (omits slow) or `python -m pytest tests/ -v -m slow` for round-trip.
+
+#### Test files
+
+| File | What it tests |
+|---|---|
+| `tests/conftest.py` | Shared fixtures: `synthetic_csv`, `minimal_mlp_weights`, `slow` marker |
+| `tests/test_contracts.py` | `validate_modelica_name`, `load_run_config`/`save_run_config` BOM round-trip, `write_status` |
+| `tests/test_dataset_loader.py` | `infer_format`, `preview_headers`, `load_dataset` |
+| `tests/test_preprocess.py` | `make_attempt_paths`, `validate_and_clean` (duplicates, coercion) |
+| `tests/test_split_scale.py` | `_split_data` ratios (70/15/15 ±1 row), `_scale_xy` no-data-leakage |
+| `tests/test_attempts_manager.py` | `score_attempt_rmse_mean_physical`, `select_best_attempt` picks lowest RMSE |
+| `tests/test_fmu_export.py` | `_resolve_gcc` (cfg override, not-found), FMI 2.0 XML rules (variable counts, `<Real start>`, no `initial="exact"`, no `needsDirectionDerivatives`), C code weight arrays |
+| `tests/test_modelica_export.py` | `_load_weights_as_modelica_Wb` transpose correctness, `export_modelica` file creation |
+| `tests/test_pipeline_roundtrip.py` | `@pytest.mark.slow` — 200-row synthetic CSV → `run_full_attempt()` (DLL compile skipped) → asserts `mlp_weights.json` shape, finite RMSE, `package.mo` exists |
+
+#### Test conventions
+- Private functions tested directly (`_split_data`, `_scale_xy`, `_resolve_gcc`, `_load_weights_as_modelica_Wb`) — this is where bugs hide.
+- `pytest-mock` (`mocker`) used for `_resolve_gcc` filesystem mocking.
+- `train.py` excluded from unit tests — TF import is heavy; only the round-trip test exercises TF.
+- Round-trip test mocks `_compile_dll` to skip gcc requirement.
+- No coverage threshold — green tests first.
+
+### 2. Skip EDA on Retrain
+`orchestrator.py` always runs `run_eda()` as stage 2, even on `retrain`. EDA figures (heatmaps, distributions) don't change between attempts on the same dataset, yet they regenerate every time (~10–30s overhead per attempt).
+
+**Fix:** In `run_eda()`, check if figures already exist in the run's `reports/figures/` directory and skip regeneration if so.
+
+### 3. Drop Intermediate Scaled CSVs
+`split_scale.py` writes six CSVs (`X_train_scaled.csv`, etc.) to disk; `train.py` reads them all back immediately. This is pure disk I/O overhead.
+
+**Fix:** Replace with a single `dataset_splits.npz` (already defined in the run structure) and load via `np.load()`, or pass arrays via a shared `ProcessedDataset` dataclass if stages run in the same process.
+
+### 4. Cache gcc Resolution
+`fmu_export.py` `_resolve_gcc()` runs `glob.glob()` across multiple root patterns on every FMU creation. On large filesystems this is slow.
+
+**Fix:** Cache the resolved path in a module-level variable after first successful resolution, or resolve once during `make-run` and persist `gcc_path` in `run_config.json`.
+
+### 5. Hyperparameter Variation Across Attempts
+`train.py` uses a hardcoded `[128, 128, 64]` architecture for every attempt. The `retrain` command already supports multiple attempts — nothing varies between them.
+
+**Fix:** Pass different `hidden` layer configs per attempt (e.g., attempt 1: `[64, 64]`, attempt 2: `[128, 128, 64]`, attempt 3: `[256, 128, 64]`). The best-attempt selector already picks the lowest physical RMSE, so this gives free architecture search.
+
+### 6. Consistent Path Construction Across Stages
+`preprocess.py` defines `make_attempt_paths()` but `train.py` and other stages reconstruct `processed_dir`, `reports_dir`, `logs_dir` inline independently.
+
+**Fix:** All stages should call `make_attempt_paths()` from `preprocess.py` instead of duplicating path logic.
+
+### 7. Add a `cleanup` CLI Subcommand
+`runs/` accumulates indefinitely (25+ folders as of May 2026), each containing `.keras` models, CSVs, and `.fmu` files.
+
+**Fix:** Add `python -m surrogate_tool cleanup --keep-latest N` that deletes all but the N most recent run folders.

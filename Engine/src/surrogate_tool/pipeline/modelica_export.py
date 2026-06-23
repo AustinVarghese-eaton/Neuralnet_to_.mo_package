@@ -374,9 +374,8 @@ equation
 end {EX_WRAPPER};
 """)
 
-    # Constant smoke-test (first 4 set to {520,4,80,50}, rest zeros)
-    base = [520.0, 4.0, 80.0, 50.0]
-    u_test = [(base[i] if i < len(base) else 0.0) for i in range(n_in)]
+    # Constant smoke-test: use training data mean per input (statistically meaningful defaults)
+    u_test = x_mean.tolist()
     const_sources = []
     const_connects = []
     for i in range(1, n_in + 1):
